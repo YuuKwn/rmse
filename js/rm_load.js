@@ -64,13 +64,19 @@ function get_rm_root(curr_path) {
 	// I'm not super familiar with RPGMaker so I don't know if this function is
 	// 100% reliable. I also don't know if this will work on Windows with its
 	// weird paths. YOLO
-	if (fs.existsSync(path.join(curr_path, 'Game')) ||
-	    fs.existsSync(path.join(curr_path, 'nw'))   ||
-	    fs.existsSync(path.join(curr_path, 'Game.exe')) ||
-	    fs.existsSync(path.join(curr_path, 'nw.exe'))) {
-		// This is currently the rm root!
-		return curr_path;
+	try { // Add basic error handling for FS operations
+		if (fs.existsSync(path.join(curr_path, 'Game')) ||
+			fs.existsSync(path.join(curr_path, 'nw'))   ||
+			fs.existsSync(path.join(curr_path, 'Game.exe')) ||
+			fs.existsSync(path.join(curr_path, 'nw.exe'))) {
+			// This is currently the rm root!
+			return curr_path;
+		}
+	} catch (err) {
+		console.error(`Error checking for RM root indicators in ${curr_path}: ${err}`);
+		return null; // Fail gracefully if FS error occurs
 	}
+
 
 	let updir = path.dirname(curr_path);
 	if (updir == curr_path) {
@@ -88,13 +94,26 @@ function build_codec(file_path, rm_root) {
 
 	if (path.extname(file_path) == '.json') {
 		codec = new null_codec(rm_root);
-	} else if (fs.existsSync(pakopath)) {
-		// Build pako decodec
-		codec = new pako_codec(pakopath);
-	} else if (fs.existsSync(lzpath)) {
-		// Build lz-string decodec
-		codec = new lz_codec(lzpath);
-	}
+	} else { // Check for codecs only if it's not raw JSON
+        try { // Wrap FS checks
+            if (fs.existsSync(pakopath)) {
+                // Build pako decodec
+                codec = new pako_codec(pakopath);
+            } else if (fs.existsSync(lzpath)) {
+                // Build lz-string decodec
+                codec = new lz_codec(lzpath);
+            } else {
+                // Fallback or error if no known save format/codec library found
+                console.error(`Could not find pako (${pakopath}) or lz-string (${lzpath}). Assuming uncompressed format for ${file_path}`);
+                // Decide on fallback behavior: null_codec or throw error?
+                codec = new null_codec(rm_root); // Assuming uncompressed if libs missing
+            }
+        } catch (err) {
+            console.error(`Error checking for codec libraries: ${err}`);
+             codec = new null_codec(rm_root); // Fallback on error
+        }
+    }
+
 
 	return codec;
 }
@@ -116,30 +135,48 @@ function get_context(file_path) {
 	let savedir = path.dirname(file_path);
 	let maindir = path.dirname(savedir);
 	let datadir = path.join(maindir, 'data');
-	if (!fs.existsSync(datadir)) {
-		console.error('Could not find data dir for ' + file_path);
+
+	try { // Wrap FS check
+		if (!fs.existsSync(datadir)) {
+			console.error('Could not find data dir for ' + file_path + ` (expected at ${datadir})`);
+			return {}; // Return empty context if data dir not found
+		}
+	} catch (err) {
+		console.error(`Error checking for data directory ${datadir}: ${err}`);
 		return {};
 	}
+
 
 	// Load the context
 	let context_files = {
 		items: path.join(datadir, 'Items.json'),
 		armors: path.join(datadir, 'Armors.json'),
 		weapons: path.join(datadir, 'Weapons.json'),
-		variables: path.join(datadir, 'System.json')
+		variables: path.join(datadir, 'System.json'),
+		// --- Add Skills.json here ---
+		skills: path.join(datadir, 'Skills.json') // <-- Added line
+		// ----------------------------
 	};
 
 	Object.entries(context_files).forEach((entry) => {
-		[key, filepath] = entry;
-		if (fs.existsSync(filepath)) {
-			context[key] = fs.readFileSync(filepath, {
-				encoding: 'utf-8'
-			});
+		const [key, filepath] = entry; // Use const/let
+		try { // Wrap FS check and readFileSync
+			if (fs.existsSync(filepath)) {
+				context[key] = fs.readFileSync(filepath, {
+					encoding: 'utf-8'
+				});
+			} else {
+				console.warn(`Context file not found: ${filepath}`); // Warn if a file is missing
+			}
+		} catch (err) {
+			console.error(`Failed to read context file ${filepath}: ${err}`);
+			// Decide if you want to return partial context or fail entirely
 		}
 	});
 
 	return context;
 }
+
 
 function load(file_path) {
 	let rm_root = get_rm_root(file_path);
@@ -149,7 +186,18 @@ function load(file_path) {
 		return null;
 	}
 	let codec = build_codec(file_path, rm_root);
-	let json = codec.decode(file_path);
+    if (!codec) {
+         console.error('Could not determine save file encoding (no codec found)...aborting');
+         return null;
+    }
+    let json = null;
+    try {
+	    json = codec.decode(file_path);
+    } catch(err) {
+        console.error(`Error decoding file ${file_path}: ${err}`);
+        return null;
+    }
+
 	let context = get_context(file_path);
 
 	context['json_txt'] = json;
@@ -159,12 +207,23 @@ function load(file_path) {
 
 async function save(file_path, json_str, rm_root) {
 	let codec = build_codec(file_path, rm_root);
-	let strdata = codec.encode(json_str);
+    if (!codec) {
+         console.error('Could not determine save file encoding for saving (no codec found)...aborting');
+         return '';
+    }
+    let strdata = '';
+    try {
+        strdata = codec.encode(json_str);
+    } catch(err) {
+        console.error(`Error encoding data for file ${file_path}: ${err}`);
+        return '';
+    }
+
 
 	try {
 		await fsprom.writeFile(file_path, strdata);
 	} catch (err) {
-		console.log('Error saving file ' + file_path + ': ' + err);
+		console.error('Error saving file ' + file_path + ': ' + err); // Use console.error
 		return '';
 	}
 	return file_path;
@@ -172,4 +231,4 @@ async function save(file_path, json_str, rm_root) {
 
 exports.load = load;
 exports.save = save;
-exports.get_rm_root = get_rm_root
+exports.get_rm_root = get_rm_root;

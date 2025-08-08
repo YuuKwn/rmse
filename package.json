@@ -1,14 +1,40 @@
 {
-  "name": "RPGMaker Save Editor",
-  "version": "1.0.0",
+  "name": "yuuditor",
+  "version": "1.1.0",
   "description": "Save file editor for RPGMaker games",
   "main": "js/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "package": "electron-builder"
   },
   "author": "Nathan Baker",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^35.1.4"
+    "electron": "^16.0.5",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.example.rpgmaker-save-editor",
+    "productName": "yuuditor",
+    "files": [
+      "**/*",
+      "!node_modules/@electron/**",
+      "!node_modules/.bin",
+      "!release/"
+    ],
+    "directories": {
+      "output": "release/"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
   }
 }
