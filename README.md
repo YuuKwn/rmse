@@ -1,3 +1,5 @@
+Things that this Fork added so far: Added Skills (add or remove) to party members, Added ability to Pin to the top the bools or variables for easy editing for most used or most edited fields when tikering with save files. 
+
 # RPGMaker Save Editor
 
 This is a tool for editing RPGMaker save files. It currently supports save files written by RPG Maker MZ (.rmmzsave), but support for other versions of RPGMaker is planned for the future.
